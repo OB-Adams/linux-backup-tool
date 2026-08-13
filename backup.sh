@@ -45,13 +45,13 @@ while getopts ":s:d:r:l:qh" opt; do
     esac
 done
 
-if [[ -z "${SOURCE_DIR}" || -Z "${DEST_DIR}" ]]; then
+if [[  -z "${SOURCE_DIR}" || -z "${DEST_DIR}" ]]; then
 	echo "Error: -s SOURCE_DIR and -d DEST_DIR are both required." >&2
     	usage
 	exit 3
 fi
 
-if [[ -d "${SOURCE_DIR}" ]]; then
+if [[ ! -d "${SOURCE_DIR}" ]]; then
 	echo "Error: source directory does not exist: ${SOURCE_DIR}" >&2
     	exit 3
 fi
@@ -71,7 +71,7 @@ archive_path="${DEST_DIR}/${archive_name}"
 status="OK"
 exit_code=0
 
-if tar -czf "${archive_path}" -C "$(dirname "${SOURCE_DIR}")" "${basename}" 2>/tmp/backup-tar-err.$$; then
+if tar -czf "${archive_path}" -C "$(dirname "${SOURCE_DIR}")" "${base_name}" 2>/tmp/backup-tar-err.$$; then
 	tar_ok=1
 else
 	tar_ok=0
@@ -82,4 +82,16 @@ if [[ "${tar_ok}" -eq 0 ]]; then
     exit_code=2
 fi
 
+verify_ok=1
+if [[ "${exit_code}" -lt 2 ]]; then
+    if ! tar -tzf "${archive_path}" >/dev/null 2>&1; then
+        verify_ok=0
+        status="FAILURE"
+        exit_code=2
+    fi
+fi
 
+archive_size="n/a"
+if [[ -f "${archive_path}" && "${verify_ok}" -eq 1 ]]; then
+	archive_size=$(du -h "${archive_path}" | cut -f1)
+fi
