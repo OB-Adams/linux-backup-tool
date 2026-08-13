@@ -95,3 +95,66 @@ archive_size="n/a"
 if [[ -f "${archive_path}" && "${verify_ok}" -eq 1 ]]; then
 	archive_size=$(du -h "${archive_path}" | cut -f1)
 fi
+
+deleted_count=0
+deleted_names=""
+
+if [[ "${exit_code}" -lt 2 ]]; then
+    while IFS= read -r -d '' old_archive; do
+        if rm -f "${old_archive}"; then
+            deleted_count=$(( deleted_count + 1 ))
+            deleted_names="${deleted_names}    - $(basename "${old_archive}")"$'\n'
+        else
+            status="WARNING"
+            [[ "${exit_code}" -lt 1 ]] && exit_code=1
+        fi
+    done < <(find "${DEST_DIR}" -maxdepth 1 -name "${base_name}-*.tar.gz" -mtime "+${RETENTION_DAYS}" -print0)
+fi
+
+remaining_count=$(find "${DEST_DIR}" -maxdepth 1 -name "${base_name}-*.tar.gz" | wc -l)
+
+timestamp_log=$(date '+%Y-%m-%d %H:%M:%S')
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+if [[ "${exit_code}" -ge 2 ]]; then
+    report=$(cat <<EOF
+[${timestamp_log}] backup: ${status}
+  Source: ${SOURCE_DIR}
+  Failed to create/verify archive at: ${archive_path}
+  tar error output:
+$(sed 's/^/    /' /tmp/backup-tar-err.$$ 2>/dev/null || echo "    (no error output captured)")
+EOF
+)
+else
+    report=$(cat <<EOF
+[${timestamp_log}] backup: ${status}
+  Source : ${SOURCE_DIR}
+  Archive: ${archive_name} (${archive_size})
+  Retention: ${RETENTION_DAYS} days, ${remaining_count} archive(s) currently kept
+$(if [[ "${deleted_count}" -gt 0 ]]; then
+    echo "  Deleted ${deleted_count} archive(s) past retention:"
+    printf '%s' "${deleted_names}"
+else
+    echo "  No archives past retention window."
+fi)
+EOF
+)
+fi
+
+rm -f /tmp/backup-tar-err.$$
+
+if [[ "${QUIET}" -eq 0 ]]; then
+    echo "${report}"
+fi
+
+if [[ -n "${LOGFILE}" ]]; then
+    {
+        echo "${report}"
+        echo
+    } >> "${LOGFILE}"
+fi
+
+exit "${exit_code}"
